@@ -81,3 +81,7 @@ There are a number of other flags that can be adjusted but are not required. Aga
 * `save_predetail` if True, saves both the finished image and the image prior to face detailing in the output folder. If you are running a chain of generations, this will lead to the number of images doubling at each step, so look out.
 * `cfg` and `steps` do what you'd expect, can be helpful when switching the checkpoint on the fly.
 * `queue_poll_delay` should be a float - how often the program tests to see if the queue has emptied before submitting the next jobs. It waits for an empty queue so that images generated in earlier runs are available for use in later ones. The default is 0.25 seconds.
+
+## other notes
+
+It is useful (for me) to be able to easily compare images in the same lineage. This script tries to promote this with how it names the output files. If the input file has a filename starting with four digits, or an X followed by four digits, those same digits will be used on the output of the process. If the file does _not_ have a name matching this pattern, the program will attempt to assign one (although this may have mixed results where some files have this prefix and some do not.) You can then use a program like [Diffusion.Toolkit](https://github.com/RupertAvery/DiffusionToolkit) to filter to a specific parent folder and then sort by file name to bring all the relevant items together.
