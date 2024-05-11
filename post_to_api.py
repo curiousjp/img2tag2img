@@ -1,6 +1,6 @@
 from urllib import request
 from PIL import Image
-import argparse 
+import argparse
 import base64
 import configparser
 import datetime
@@ -42,7 +42,7 @@ def image_to_data_url(image_path):
 # grab a (nominally) unused number (stored as a function static) and
 # use that instead.
 #
-# this can stuff up in situations where some files in 
+# this can stuff up in situations where some files in
 # the folder have prefixes and others don't.
 
 def extract_prefix(file_path):
@@ -66,7 +66,7 @@ def get_style_loras(base_lora_path, subfolder = None, pad_list = 1):
         folder_path = os.path.join(base_lora_path, subfolder)
     else:
         folder_path = base_lora_path
-    
+
     for root, _, files in os.walk(folder_path):
         for file in files:
             if file.endswith('.safetensors') and file not in lora_banlist:
@@ -101,7 +101,7 @@ def is_valid_file(p, a):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument('workflow', type=lambda x: is_valid_file(parser, x))
     parser.add_argument('folder_f', type=str)
     parser.add_argument('folder_t', nargs="+", type=str)
@@ -137,26 +137,34 @@ if __name__ == '__main__':
         else:
             continue
 
-    for k, v in configuration.items():   
+    for k, v in configuration.items():
         if k in ['blank_loras', 'steps']: v = int(v)
         if k in ['queue_poll_delay', 'cfg']: v = float(v)
         if v in ['False', 'false']: v = False
         if v in ['True', 'true']: v = True
         configuration[k] = v
 
-    for necessary_key in [
-        'archive_path', 
+    necessaries = [
+        'archive_path',
         'banned_tags',
-        'checkpoint', 
+        'checkpoint',
         'llava_model',
         'llava_projector',
         'llava_prompt',
         'lora_root',
         'negative',
-        'preamble']:
+        'preamble'
+    ]
+
+    if configuration.get('disable_llm', False):
+        necessaries.remove('llava_model')
+        necessaries.remove('llava_projector')
+        necessaries.remove('llava_prompt')
+
+    for necessary_key in necessaries:
         if necessary_key not in configuration:
             print(f'Necessary configuration key \'{necessary_key}\' must be provided in either {args.config_file} or on the command line. Exiting.')
-            sys.exit(1)   
+            sys.exit(1)
 
     print('Current configuration:', configuration)
 
@@ -192,13 +200,20 @@ if __name__ == '__main__':
             "images_a": ["face_detailer", 0 ]
         }
 
+    if configuration.get('disable_llm', False):
+        if 'llava_tagger' in master_workflow_object:
+            del master_workflow_object['llava_tagger']
+            master_workflow_object['combine_prompt_and_preamble']['inputs']['text_c'] = ""
+    else:
+        master_workflow_object['llava_tagger']['inputs']['prompt'] = configuration.get('llava_prompt')
+        master_workflow_object['llava_tagger']['inputs']['model'] = fix_slashes(configuration.get('llava_model'))
+        master_workflow_object['llava_tagger']['inputs']['mm_proj'] = fix_slashes(configuration.get('llava_projector'))
+
+
     master_workflow_object['preamble']['inputs']['string'] = configuration.get('preamble')
     master_workflow_object['negative_prompt']['inputs']['string'] = configuration.get('negative')
     master_workflow_object['wd14_tagger']['inputs']['exclude_tags'] = configuration.get('banned_tags')
-    master_workflow_object['llava_tagger']['inputs']['prompt'] = configuration.get('llava_prompt')
-    master_workflow_object['llava_tagger']['inputs']['model'] = fix_slashes(configuration.get('llava_model'))
-    master_workflow_object['llava_tagger']['inputs']['mm_proj'] = fix_slashes(configuration.get('llava_projector'))
-    
+
     if 'cfg' in configuration:
         master_workflow_object['ksampler']['inputs']['cfg'] = configuration.get('cfg')
     if 'steps' in configuration:
@@ -215,7 +230,10 @@ if __name__ == '__main__':
         f_s, f_d = pair
         per_directory_wf = dict(master_workflow_object)
 
-        output_path = fix_slashes(os.path.join(configuration.get('archive_path'), f_d))
+        if 'output_path' in configuration:
+            output_path = fix_slashes(os.path.join(configuration.get('output_path'), f_d))
+        else:
+            output_path = fix_slashes(os.path.join(configuration.get('archive_path'), f_d))
         per_directory_wf['full_path']['inputs']['string'] = output_path
 
         print(f'** standing by to run workflow from {f_s} to {f_d}')
@@ -252,4 +270,3 @@ if __name__ == '__main__':
             sys.stdout.flush()
             time.sleep(0.05)
         print(f' - complete')
-    
