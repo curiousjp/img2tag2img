@@ -183,6 +183,38 @@ if __name__ == '__main__':
         print('Workflow comment was:', master_workflow_object['_comment'])
         del master_workflow_object['_comment']
 
+    # overrides
+    for k, v in configuration.items():
+        if not k.startswith('override-'):
+            continue
+        pieces = k.split('-')
+        # --override-ksampler-sampler_name euler
+        if len(pieces) == 3:
+            _, node, field = pieces
+            type_conversion = None
+        # --override-load_model-batch_size-int 3
+        if len(pieces) == 4:
+            _, node, field, type_conversion = pieces
+        match type_conversion:
+            case 'str':
+                v = str(v)
+            case 'int':
+                v = int(v)
+            case 'float':
+                v = float(v)
+            case 'wire':
+                inwards_node, output_number = v.split(':', 1)
+                v = [inwards_node.strip(), int(output_number)]
+            case None:
+                pass
+            case _:
+                raise TypeError(f'requested an override with {k}, but no casting case known for {type_conversion}')
+        if not node in master_workflow_object:
+            raise ValueError(f'requested an override of node {node} via {k}, but no such node in the workflow')
+        if not field in master_workflow_object[node]['inputs']:
+            raise ValueError(f'requested an override of input {field} on node {node} via {k}, but no such input exists on that node in the workflow')
+        master_workflow_object[node]['inputs'][field] = v
+
     lora_choices = get_style_loras(
         configuration.get('lora_root'),
         configuration.get('lora_prefix'),

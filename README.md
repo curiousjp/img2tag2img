@@ -82,6 +82,10 @@ There are a number of other flags that can be adjusted but are not required. Aga
 * `cfg` and `steps` do what you'd expect, can be helpful when switching the checkpoint on the fly.
 * `queue_poll_delay` should be a float - how often the program tests to see if the queue has emptied before submitting the next jobs. It waits for an empty queue so that images generated in earlier runs are available for use in later ones. The default is 0.25 seconds.
 
+## but I want to override something you didn't think of
+
+You can change arbitrary values in the workflows by use of the `--override` family of arguments. For example, `--override-load_model-batch_size-int 3` will change the `batch_size` input of the node called `load_model`. Acceptable type hints are `str`, `int`, `float`, and `wire`, which will convert a value like `some_node:3` to `['some_node', 3]`.
+
 ## other notes
 
 It is useful (for me) to be able to easily compare images in the same lineage. This script tries to promote this with how it names the output files. If the input file has a filename starting with four digits, or an X followed by four digits, those same digits will be used on the output of the process. If the file does _not_ have a name matching this pattern, the program will attempt to assign one (although this may have mixed results where some files have this prefix and some do not.) You can then use a program like [Diffusion.Toolkit](https://github.com/RupertAvery/DiffusionToolkit) to filter to a specific parent folder and then sort by file name to bring all the relevant items together.
