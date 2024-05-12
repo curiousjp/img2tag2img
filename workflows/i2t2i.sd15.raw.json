@@ -1,0 +1,295 @@
+{
+    "load_model": {
+        "inputs": {
+            "ckpt_name": "sd15\\checkpoint.safetensors",
+            "vae_name": "vae-ft-mse-840000-ema-pruned.ckpt",
+            "clip_skip": -2,
+            "lora_name": "None",
+            "lora_model_strength": 1,
+            "lora_clip_strength": 1,
+            "positive": ["log_prompt_to_console", 0],
+            "negative": ["negative_prompt", 0],
+            "token_normalization": "none",
+            "weight_interpretation": "comfy",
+            "empty_latent_width": ["sd_resolution_splitter", 0],
+            "empty_latent_height": ["sd_resolution_splitter", 1],
+            "batch_size": 1
+        },
+        "class_type": "Efficient Loader",
+        "_meta": {"title": "Efficient Loader"}
+    },
+    "negative_prompt": {
+        "inputs": {
+            "string": ""
+        },
+        "class_type": "String to Text",
+        "_meta": {"title": "Negative Prompt"}
+    },
+    "ksampler": {
+        "inputs": {
+            "seed": ["seed", 3],
+            "steps": 35,
+            "cfg": 7,
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "denoise": 1,
+            "preview_method": "auto",
+            "vae_decode": "true",
+            "model": ["apply_freeu", 0],
+            "positive": ["load_model", 1],
+            "negative": ["load_model", 2],
+            "latent_image": ["load_model", 3],
+            "optional_vae": ["load_model", 4],
+            "script": ["highres_script", 0]
+        },
+        "class_type": "KSampler (Efficient)",
+        "_meta": {"title": "KSampler (Efficient)"}
+    },
+    "lora_stacker": {
+        "inputs": {
+            "input_mode": "simple",
+            "lora_count": 1,
+            "lora_name_1": "None",
+            "lora_wt_1": 0.8,
+            "model_str_1": 1,
+            "clip_str_1": 1
+        },
+        "class_type": "LoRA Stacker",
+        "_meta": {"title": "LoRA Stacker"}
+    },
+    "save_image": {
+        "inputs": {
+            "filename": "%time_%basemodelname_%seed",
+            "path": ["full_path", 0],
+            "extension": "png",
+            "steps": 25,
+            "cfg": 7,
+            "modelname": "",
+            "sampler_name": "euler_ancestral",
+            "scheduler": "normal",
+            "positive": ["combine_prompt_and_preamble", 0],
+            "negative": ["negative_prompt", 0],
+            "seed_value": ["seed", 3],
+            "width": ["get_detailed_image_info", 2],
+            "height": ["get_detailed_image_info", 1],
+            "lossless_webp": true,
+            "quality_jpeg_or_webp": 100,
+            "optimize_png": false,
+            "counter": 0,
+            "denoise": 1,
+            "time_format": "%Y-%m-%d-%H%M%S",
+            "save_workflow_as_json": false,
+            "images": ["batch_images", 0]
+        },
+        "class_type": "Image Saver",
+        "_meta": {"title": "Image Saver"}
+    },
+    "get_detailed_image_info": {
+        "inputs": {
+            "value": ["face_detailer", 0]
+        },
+        "class_type": "ImpactImageInfo",
+        "_meta": {"title": "ImpactImageInfo"}
+    },
+    "pack_detailer_pipe": {
+        "inputs": {
+            "wildcard": "",
+            "Select to add LoRA": "Select the LoRA to add to the text",
+            "Select to add Wildcard": "Select the Wildcard to add to the text",
+            "model": ["apply_freeu", 0],
+            "clip": ["load_model", 5],
+            "vae": ["load_model", 4],
+            "positive": ["load_model", 1],
+            "negative": ["load_model", 2],
+            "bbox_detector": ["ultralytics_provider", 0]
+        },
+        "class_type": "ToDetailerPipe",
+        "_meta": {"title": "ToDetailerPipe"}
+    },
+    "face_detailer": {
+        "inputs": {
+            "guide_size": 384,
+            "guide_size_for": true,
+            "max_size": 1024,
+            "seed": ["seed", 3],
+            "steps": 20,
+            "cfg": 8,
+            "sampler_name": "euler",
+            "scheduler": "normal",
+            "denoise": 0.35,
+            "feather": 5,
+            "noise_mask": true,
+            "force_inpaint": false,
+            "bbox_threshold": 0.5,
+            "bbox_dilation": 10,
+            "bbox_crop_factor": 3,
+            "sam_detection_hint": "center-1",
+            "sam_dilation": 0,
+            "sam_threshold": 0.93,
+            "sam_bbox_expansion": 0,
+            "sam_mask_hint_threshold": 0.7,
+            "sam_mask_hint_use_negative": "False",
+            "drop_size": 10,
+            "refiner_ratio": 0.2,
+            "cycle": 2,
+            "inpaint_model": false,
+            "noise_mask_feather": 0,
+            "image": ["ksampler", 5],
+            "detailer_pipe": ["pack_detailer_pipe", 0]
+        },
+        "class_type": "FaceDetailerPipe",
+        "_meta": {"title": "FaceDetailer (pipe)"}
+    },
+    "ultralytics_provider": {
+        "inputs": {
+            "model_name": "bbox/face_yolov8m.pt"
+        },
+        "class_type": "UltralyticsDetectorProvider",
+        "_meta": {"title": "UltralyticsDetectorProvider"}
+    },
+    "highres_script": {
+        "inputs": {
+            "upscale_type": "latent",
+            "hires_ckpt_name": "(use same)",
+            "latent_upscaler": "nearest-exact",
+            "pixel_upscaler": "4x-UltraSharp.pth",
+            "upscale_by": 1.25,
+            "use_same_seed": true,
+            "seed": 3793806229,
+            "hires_steps": 12,
+            "denoise": 0.4,
+            "iterations": 4,
+            "use_controlnet": false,
+            "control_net_name": "control_v11f1e_sd15_tile.pth",
+            "strength": 1,
+            "preprocessor": "none",
+            "preprocessor_imgs": false
+        },
+        "class_type": "HighRes-Fix Script",
+        "_meta": {"title": "HighRes-Fix Script"}
+    },
+    "apply_freeu": {
+        "inputs": {
+            "b1": 1.3,
+            "b2": 1.4,
+            "s1": 0.9,
+            "s2": 0.2,
+            "model": ["load_model", 0]
+        },
+        "class_type": "FreeU_V2",
+        "_meta": {"title": "FreeU_V2"}
+    },
+    "batch_images": {
+        "inputs": {
+            "images_a": ["ksampler", 5],
+            "images_b": ["face_detailer", 0]
+        },
+        "class_type": "Image Batch",
+        "_meta": {"title": "Image Batch"}
+    },
+    "sd_resolution_splitter": {
+        "inputs": {
+            "sdxl_resolution": ["resolution_to_sd_resolution", 0]
+        },
+        "class_type": "SDXL Resolution Split",
+        "_meta": {"title": "SDXL Resolution Split"}
+    },
+    "preamble": {
+        "inputs": {
+            "string": ""
+        },
+        "class_type": "String to Text",
+        "_meta": {"title": "Preamble"}
+    },
+    "log_prompt_to_console": {
+        "inputs": {
+            "text": ["combine_prompt_and_preamble", 0],
+            "label": "Primary Prompt"
+        },
+        "class_type": "Text to Console",
+        "_meta": {"title": "Text to Console"}
+    },
+    "image_loader": {
+        "inputs": {
+            "image": "#DATA",
+            "image_data": "",
+            "upload": "image"
+        },
+        "class_type": "LoadImage //Inspire",
+        "_meta": {"title": "Load Image (Inspire)"}
+    },
+    "full_path": {
+        "inputs": {
+            "string": ""
+        },
+        "class_type": "String to Text",
+        "_meta": {"title": "Output Folder"}
+    },
+    "read_aspect_ratio": {
+        "inputs": {
+            "image": ["image_loader", 0]
+        },
+        "class_type": "Image Aspect Ratio",
+        "_meta": {"title": "Image Aspect Ratio"}
+    },
+    "wd14_tagger": {
+        "inputs": {
+            "model": "wd-v1-4-moat-tagger-v2",
+            "threshold": 0.35,
+            "character_threshold": 0.85,
+            "replace_underscore": false,
+            "trailing_comma": false,
+            "exclude_tags": "",
+            "image": ["image_loader", 0]
+        },
+        "class_type": "WD14Tagger|pysssss",
+        "_meta": {"title": "WD14 Tagger \ud83d\udc0d"}
+    },
+    "llava_tagger": {
+        "inputs": {
+            "model": "",
+            "mm_proj": "",
+            "prompt": "",
+            "max_tokens": 200,
+            "temperature": 0.30,
+            "image": ["image_loader", 0]
+        },
+        "class_type": "LlavaCaptioner",
+        "_meta": {"title": "LLaVA Captioner \ud83c\udf0a"}
+    },
+    "combine_prompt_and_preamble": {
+        "inputs": {
+            "delimiter": ", ",
+            "clean_whitespace": "true",
+            "text_a": ["preamble", 0],
+            "text_b": ["wd14_tagger", 0],
+            "text_c": ["llava_tagger", 0]
+        },
+        "class_type": "Text Concatenate",
+        "_meta": {"title": "Text Concatenate"}
+    },
+    "aspect_ratio_to_resolution": {
+        "inputs": {
+            "script": "if a == \"square\": \n    asterr_result = \"512x512\" \nelif a == \"portrait\": \n    asterr_result = \"576x768\"\nelse:\n    asterr_result = \"768x576\"",
+            "preset_script": "None",
+            "always_run": "false",
+            "a": ["read_aspect_ratio", 4]
+        },
+        "class_type": "ASTERR",
+        "_meta": {"title": "ASTERR Script"}
+    },
+    "resolution_to_sd_resolution": {
+        "inputs": {
+            "resolution": ["aspect_ratio_to_resolution", 0]
+        },
+        "class_type": "SDXL Resolution Picker",
+        "_meta": {"title": "SDXL Resolution Picker"}
+    },
+    "seed": {
+        "inputs": {
+            "seed": 1
+        },
+        "class_type": "Seed",
+        "_meta": {"title": "Master Seed"}
+    }
+}
