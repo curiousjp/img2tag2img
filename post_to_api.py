@@ -115,27 +115,27 @@ if __name__ == '__main__':
             for k, v in config_object.items(section):
                 configuration[k] = v
 
-    ua_iterable = iter(unknown_arguments)
-    for unknown_arg in ua_iterable:
+    # had originally used an iterable here, but there's no
+    # really good way to peek these in a for/in loop
+    index = 0
+    while index < len(unknown_arguments):
+        unknown_arg = unknown_arguments[index]
+        if index < len(unknown_arguments) - 1:
+            next_unknown_arg = unknown_arguments[index + 1]
+        else:
+            next_unknown_arg = None
         if unknown_arg.startswith('--'):
             key = unknown_arg[2:]
             if '=' in key:
                 key, value = key.split('=', 1)
+            elif next_unknown_arg == None or next_unknown_arg.startswith('--'):
+                value = True
             else:
-                try:
-                    peek_arg = next(ua_iterable)
-                    if peek_arg.startswith('--'):
-                        value = True
-                        # stuff peeked arg back into the iterable
-                        ua_iterable = iter([peek_arg] + list(ua_iterable))
-                    else:
-                        value = peek_arg
-                # ran out of argument to peek
-                except StopIteration:
-                    value = True
+                value = next_unknown_arg
+                # jump over the next argument
+                index += 1
             configuration[key] = value
-        else:
-            continue
+        index += 1
 
     for k, v in configuration.items():
         if k in ['blank_loras', 'steps']: v = int(v)
@@ -290,6 +290,8 @@ if __name__ == '__main__':
             wf['seed']['inputs']['seed'] = random.randint(0, 1125899906842623)
             data_url = image_to_data_url(image_path)
             wf['image_loader']['inputs']['image_data'] = data_url
+            if not lora_choices:
+                lora_choices = [None]
             lora_name = random.choice(lora_choices)
             if lora_name:
                 wf['lora_stacker']['inputs']['lora_name_1'] = fix_slashes(lora_name)
