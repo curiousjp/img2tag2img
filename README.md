@@ -4,6 +4,8 @@ A ComfyUI workflow and support tools for large scale indirect img2img using tagg
 The cycle [can be repeated for as long as you have GPU cycles and disk to spare](https://en.wikipedia.org/wiki/I_Am_Sitting_in_a_Room).
 ## example
 
+Read images from folder samples/stage1 and write derived images to samples/stage2, creating the folder if necessary. Once the queue is clear, read images from samples/stage2 and write derived images to samples/stage3, creating the folder if necessary:
+
 ```sh
 (venv) curious@XXXX:~/usrmnt/gh/img2tag2img$ python post_to_api.py workflows/i2t2i.sdxl.raw.json samples/stage1 samples/stage2 samples/stage3
 Current configuration: {'archive_path': '/home/curious/sdoutput/', 'banned_tags': 'watermark, web_address', 'checkpoint': 'sdxl/ponyDiffusionV6XL_v6StartWithThisOne.safetensors', 'comfy_address': '127.0.0.1', 'comfy_on_windows': True, 'comfy_port': '8188', 'llava_model': 'llama/llava-v1.5-7b-Q4_K', 'llava_projector': 'llama/llava-v1.5-7b-mmproj-Q4_0', 'llava_prompt': 'Please describe this image in detail.', 'lora_prefix': 'pony/style/', 'lora_root': '/home/curious/lora/', 'negative': 'head_out_of_frame, 3d', 'output_path': '', 'preamble': 'score_9, score_8_up, score_7_up, score_6_up, score_5_up, score_4_up, rating_safe'}
@@ -29,8 +31,6 @@ LoRA discovery: 39 LoRA detected (including 'blank' LoRA options).
 
 The provided workflow is designed for use with SDXL. It cannot be loaded into ComfyUI by itself without further tweaking. It relies on the following custom node packs:
 
-* [ASTERR](https://github.com/WASasquatch/ASTERR)
-* [CrasH Utils](https://github.com/chrish-slingshot/CrasHUtils)
 * [Efficiency Nodes](https://github.com/jags111/efficiency-nodes-comfyui)
 * [Image Saver](https://github.com/alexopus/ComfyUI-Image-Saver)
 * [Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack)
@@ -56,6 +56,7 @@ Some configuration settings have default values, but others must be set, either 
 * `archive_path` when specifying the folders of images to read from and write to, they are given relative to this folder. So, if your images are in `C:\Comfy\Output\part1`, you might set your `archive_path` to `C:\Comfy\Output\`.
 * `banned_tags` if wd14tagger keeps detecting watermarks or other undesirable false positives, you can list them here. They should be separated by commas.
 * `checkpoint` is the path to your stable diffusion checkpoint, including the file extension. It should be given relative to your ComfyUI checkpoint folder.
+* `latent_long_edge`, `latent_short_edge`, `latent_square_edge` are used to pick a shape for the new latent. The script will try to match square, portrait, or landscape to the original image, but will use these new sizes.
 * `llava_model`, `llava_projector` are the paths to these two models, relative to the `models` folder inside the ComfyUI-LLaVA-Captioner folder. You don't need to set these if you're using `--disable_llm`.
 * `llava_prompt`, the prompt given to LLaVA when describing your image. Specific image domains can benefit from tweaking this, but the example given in the `default.ini` file will probably work for most people.
 * `lora_root`, the path to your LoRA folder. If you don't want to apply LoRA to your images, you can point this at an empty folder.
@@ -85,6 +86,8 @@ There are a number of other flags that can be adjusted but are not required. Aga
 ## but I want to override something you didn't think of
 
 You can change arbitrary values in the workflows by use of the `--override` family of arguments. For example, `--override-load_model-batch_size-int 3` will change the `batch_size` input of the node called `load_model`. Acceptable type hints are `str`, `int`, `float`, and `wire`, which will convert a value like `some_node:3` to `['some_node', 3]`.
+
+One use for this is to manually specify a specific LoRA - with the `lora_prefix` set in such a way as to remove all of your other LoRA, you can add `--override-lora_stacker-lora_name_1-str=lora name here`.
 
 ## other notes
 

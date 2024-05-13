@@ -1,5 +1,5 @@
 {
-    "_comment": "What you MUST provide to this workflow: load_model.base_ckpt_name; save_image.modelname; preamble.string, negative_prompt.string, full_path.string, wd14_tagger.exclude_tags, llava_tagger.model, llava_tagger.mm_proj, llava_tagger.prompt, seed.seed, image_loader.image_data",
+    "_comment": "What you MUST provide to this workflow: load_model.base_ckpt_name; load_model.empty_latent_width, load_model.empty_latent_height, save_image.modelname; preamble.string, negative_prompt.string, full_path.string, wd14_tagger.exclude_tags, llava_tagger.model, llava_tagger.mm_proj, llava_tagger.prompt, seed.seed, image_loader.image_data",
     "load_model": {
         "inputs": {
             "base_ckpt_name": "",
@@ -7,8 +7,8 @@
             "vae_name": "sdxl_vae.safetensors",
             "positive": ["combine_prompt_and_preamble", 0],
             "negative": ["negative_prompt", 0],
-            "empty_latent_width": ["sd_resolution_splitter", 0],
-            "empty_latent_height": ["sd_resolution_splitter", 1],
+            "empty_latent_width": 1024,
+            "empty_latent_height": 1024,
             "lora_stack": ["lora_stacker", 0],
             "refiner_ckpt_name": "None",
             "refiner_clip_skip": -2,
@@ -203,13 +203,6 @@
         "class_type": "Image Batch",
         "_meta": {"title": "Image Batch"}
     },
-    "sd_resolution_splitter": {
-        "inputs": {
-            "sdxl_resolution": ["resolution_to_sd_resolution", 0]
-        },
-        "class_type": "SDXL Resolution Split",
-        "_meta": {"title": "SDXL Resolution Split"}
-    },
     "preamble": {
         "inputs": {
             "string": ""
@@ -238,18 +231,6 @@
         },
         "class_type": "String to Text",
         "_meta": {"title": "Output Folder"}
-    },
-    "read_aspect_ratio": {
-        "inputs": {
-            "image": [
-                "image_loader",
-                0
-            ]
-        },
-        "class_type": "Image Aspect Ratio",
-        "_meta": {
-            "title": "Image Aspect Ratio"
-        }
     },
     "wd14_tagger": {
         "inputs": {
@@ -286,23 +267,6 @@
         },
         "class_type": "Text Concatenate",
         "_meta": {"title": "Text Concatenate"}
-    },
-    "aspect_ratio_to_resolution": {
-        "inputs": {
-            "script": "if a == \"square\": \n    asterr_result = \"1024x1024\" \nelif a == \"portrait\": \n    asterr_result = \"832x1216\"\nelse:\n    asterr_result = \"1216x832\"",
-            "preset_script": "None",
-            "always_run": "false",
-            "a": ["read_aspect_ratio", 4]
-        },
-        "class_type": "ASTERR",
-        "_meta": {"title": "ASTERR Script"}
-    },
-    "resolution_to_sd_resolution": {
-        "inputs": {
-            "resolution": ["aspect_ratio_to_resolution", 0]
-        },
-        "class_type": "SDXL Resolution Picker",
-        "_meta": {"title": "SDXL Resolution Picker"}
     },
     "seed": {
         "inputs": {

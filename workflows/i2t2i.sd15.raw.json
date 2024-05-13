@@ -11,8 +11,8 @@
             "negative": ["negative_prompt", 0],
             "token_normalization": "none",
             "weight_interpretation": "comfy",
-            "empty_latent_width": ["sd_resolution_splitter", 0],
-            "empty_latent_height": ["sd_resolution_splitter", 1],
+            "empty_latent_width": 512,
+            "empty_latent_height": 512,
             "batch_size": 1
         },
         "class_type": "Efficient Loader",
@@ -187,13 +187,6 @@
         "class_type": "Image Batch",
         "_meta": {"title": "Image Batch"}
     },
-    "sd_resolution_splitter": {
-        "inputs": {
-            "sdxl_resolution": ["resolution_to_sd_resolution", 0]
-        },
-        "class_type": "SDXL Resolution Split",
-        "_meta": {"title": "SDXL Resolution Split"}
-    },
     "preamble": {
         "inputs": {
             "string": ""
@@ -224,13 +217,6 @@
         },
         "class_type": "String to Text",
         "_meta": {"title": "Output Folder"}
-    },
-    "read_aspect_ratio": {
-        "inputs": {
-            "image": ["image_loader", 0]
-        },
-        "class_type": "Image Aspect Ratio",
-        "_meta": {"title": "Image Aspect Ratio"}
     },
     "wd14_tagger": {
         "inputs": {
@@ -267,23 +253,6 @@
         },
         "class_type": "Text Concatenate",
         "_meta": {"title": "Text Concatenate"}
-    },
-    "aspect_ratio_to_resolution": {
-        "inputs": {
-            "script": "if a == \"square\": \n    asterr_result = \"512x512\" \nelif a == \"portrait\": \n    asterr_result = \"576x768\"\nelse:\n    asterr_result = \"768x576\"",
-            "preset_script": "None",
-            "always_run": "false",
-            "a": ["read_aspect_ratio", 4]
-        },
-        "class_type": "ASTERR",
-        "_meta": {"title": "ASTERR Script"}
-    },
-    "resolution_to_sd_resolution": {
-        "inputs": {
-            "resolution": ["aspect_ratio_to_resolution", 0]
-        },
-        "class_type": "SDXL Resolution Picker",
-        "_meta": {"title": "SDXL Resolution Picker"}
     },
     "seed": {
         "inputs": {

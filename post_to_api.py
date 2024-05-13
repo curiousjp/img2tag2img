@@ -31,7 +31,7 @@ def image_to_data_url(image_path):
     base64_bytes = base64.b64encode(image_bytes)
     base64_string = base64_bytes.decode('utf-8')
     data_url = f'data:{mime_type};base64,{base64_string}'
-    return data_url
+    return data_url, img.size
 
 # when we go to name the new file, if it starts with four digits,
 # or an X followed by four digits, we will provide the same digits
@@ -106,6 +106,7 @@ if __name__ == '__main__':
     parser.add_argument('folder_f', type=str)
     parser.add_argument('folder_t', nargs="+", type=str)
     parser.add_argument('--config_file', type=lambda x: is_valid_file(parser, x), default='default.ini')
+    parser.add_argument('--dump', action='store_true')
     args, unknown_arguments = parser.parse_known_args()
 
     if args.config_file:
@@ -138,7 +139,7 @@ if __name__ == '__main__':
         index += 1
 
     for k, v in configuration.items():
-        if k in ['blank_loras', 'steps']: v = int(v)
+        if k in ['blank_loras', 'steps', 'latent_long_edge', 'latent_short_edge', 'latent_square_edge']: v = int(v)
         if k in ['queue_poll_delay', 'cfg']: v = float(v)
         if v in ['False', 'false']: v = False
         if v in ['True', 'true']: v = True
@@ -148,6 +149,9 @@ if __name__ == '__main__':
         'archive_path',
         'banned_tags',
         'checkpoint',
+        'latent_long_edge',
+        'latent_short_edge',
+        'latent_square_edge',
         'llava_model',
         'llava_projector',
         'llava_prompt',
@@ -288,8 +292,22 @@ if __name__ == '__main__':
         for image_path in input_images:
             wf = dict(per_directory_wf)
             wf['seed']['inputs']['seed'] = random.randint(0, 1125899906842623)
-            data_url = image_to_data_url(image_path)
+            data_url, img_size = image_to_data_url(image_path)
             wf['image_loader']['inputs']['image_data'] = data_url
+
+            img_width, img_height = img_size
+            if img_width == img_height:
+                latent_width = configuration.get('latent_square_edge')
+                latent_height = latent_width
+            elif img_width > img_height:
+                latent_width = configuration.get('latent_long_edge')
+                latent_height = configuration.get('latent_short_edge')
+            else:
+                latent_width = configuration.get('latent_short_edge')
+                latent_height = configuration.get('latent_long_edge')
+            wf['load_model']['inputs']['empty_latent_width'] = latent_width
+            wf['load_model']['inputs']['empty_latent_height'] = latent_height
+
             if not lora_choices:
                 lora_choices = [None]
             lora_name = random.choice(lora_choices)
@@ -299,6 +317,10 @@ if __name__ == '__main__':
                 wf['lora_stacker']['inputs']['clip_str_1'] = 0.8
             output_prefix = extract_prefix(image_path)
             wf['save_image']['inputs']['filename'] = f'{output_prefix}_%time_%basemodelname_%seed'
+            if args.dump:
+                dump_fn = f'{f_d}_{output_prefix}_workflow.json'
+                with open(dump_fn, 'w') as file:
+                    json.dump(wf, file, indent = 4)
             rs = submit_workflow(wf)
             print('.', end = '')
             sys.stdout.flush()
