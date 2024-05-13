@@ -318,7 +318,7 @@ if __name__ == '__main__':
             output_prefix = extract_prefix(image_path)
             wf['save_image']['inputs']['filename'] = f'{output_prefix}_%time_%basemodelname_%seed'
             if args.dump:
-                dump_fn = f'{f_d}_{output_prefix}_workflow.json'
+                dump_fn = f'{f_d}_{output_prefix}_workflow.json'.replace('/', '_').replace('\\', '_')
                 with open(dump_fn, 'w') as file:
                     json.dump(wf, file, indent = 4)
             rs = submit_workflow(wf)
