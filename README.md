@@ -29,7 +29,7 @@ LoRA discovery: 39 LoRA detected (including 'blank' LoRA options).
 
 ## the default workflow
 
-The provided workflow is designed for use with SDXL. It cannot be loaded into ComfyUI by itself without further tweaking. It relies on the following custom node packs:
+The provided workflow is designed for use with SDXL. It relies on the following custom node packs:
 
 * [Efficiency Nodes](https://github.com/jags111/efficiency-nodes-comfyui)
 * [Image Saver](https://github.com/alexopus/ComfyUI-Image-Saver)
@@ -77,6 +77,8 @@ There are a number of other flags that can be adjusted but are not required. Aga
 * `lora_prefix` allows you to limit the loras found in the `lora_root` folder to those taken from a specific subfolder - useful if you keep, for example, style loras in their own location.
 * `output_path` if your Comfy install is on a different machine or container, you might have two different ways of addressing the same location. `output_path` is given relative to the standard Comfy output folder, and sets where the image will be saved to - if it is not set, the `archive_path` will be used instead. An example might make this clearer. Imagine Comfy is running on a windows machine, with an output folder located on E:\Comfy\output. A user wants to run this script from a linux machine on the same network, with E:\Comfy\ available as a network drive on /home/user/usrmnt/comfy/. For the user, `archive_path` should be /home/user/usrmnt/comfy/output/, but the `output_path` should just be an empty string. I am still not entirely happy with this setup and may need to revisit it.
 
+* `fixed_lora_name` allows you to directly specify a LoRA for insertion. Set its strength with either `fixed_lora_weight` or `fixed_lora_clip_weight` and `fixed_lora_model_weight`.
+
 * `disable_llm` if True, removes the LLaVA related checks and workflow components.
 * `blank_loras` should be an integer. For a value _n_, it stuffs _n_ "fake" slots into the LoRA array. If you have two LoRA in your folder, and set `blank_loras` to 2, you will have a 50% chance of a LoRA being applied to your image.
 * `save_predetail` if True, saves both the finished image and the image prior to face detailing in the output folder. If you are running a chain of generations, this will lead to the number of images doubling at each step, so look out.
@@ -90,5 +92,7 @@ You can change arbitrary values in the workflows by use of the `--override` fami
 One use for this is to manually specify a specific LoRA - with the `lora_prefix` set in such a way as to remove all of your other LoRA, you can add `--override-lora_stacker-lora_name_1-str=lora name here`.
 
 ## other notes
+
+If you are having trouble working out why your settings are producing workflows that fail to validate, running the script with `--dump` will write the completed template workflow to disk, you can load it in the UI and see where it is going wrong.
 
 It is useful (for me) to be able to easily compare images in the same lineage. This script tries to promote this with how it names the output files. If the input file has a filename starting with four digits, or an X followed by four digits, those same digits will be used on the output of the process. If the file does _not_ have a name matching this pattern, the program will attempt to assign one (although this may have mixed results where some files have this prefix and some do not.) You can then use a program like [Diffusion.Toolkit](https://github.com/RupertAvery/DiffusionToolkit) to filter to a specific parent folder and then sort by file name to bring all the relevant items together.

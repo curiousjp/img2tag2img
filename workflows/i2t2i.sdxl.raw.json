@@ -1,8 +1,14 @@
 {
-    "_comment": "What you MUST provide to this workflow: load_model.base_ckpt_name; load_model.empty_latent_width, load_model.empty_latent_height, save_image.modelname; preamble.string, negative_prompt.string, full_path.string, wd14_tagger.exclude_tags, llava_tagger.model, llava_tagger.mm_proj, llava_tagger.prompt, seed.seed, image_loader.image_data",
+    "comment": {
+        "inputs": {
+            "string": "What you should provide to this workflow: load_model.base_ckpt_name; save_image.modelname; preamble.string, negative_prompt.string, full_path.string, wd14_tagger.exclude_tags, llava_tagger.model, llava_tagger.mm_proj, llava_tagger.prompt, seed.seed, image_loader.image_data"
+        },
+        "class_type": "String to Text",
+        "_meta": {"title": "Comment"}
+    },
     "load_model": {
         "inputs": {
-            "base_ckpt_name": "",
+            "base_ckpt_name": "checkpoint.safetensors",
             "base_clip_skip": -2,
             "vae_name": "sdxl_vae.safetensors",
             "positive": ["combine_prompt_and_preamble", 0],
@@ -42,12 +48,16 @@
     },
     "lora_stacker": {
         "inputs": {
-            "input_mode": "simple",
-            "lora_count": 1,
+            "input_mode": "advanced",
+            "lora_count": 2,
             "lora_name_1": "None",
-            "lora_wt_1": 1,
-            "model_str_1": 1,
-            "clip_str_1": 1
+            "lora_wt_1": 0.7,
+            "model_str_1": 0.7,
+            "clip_str_1": 0.7,
+            "lora_name_2": "None",
+            "lora_wt_2": 0.7,
+            "model_str_2": 0.7,
+            "clip_str_2": 0.7
         },
         "class_type": "LoRA Stacker",
         "_meta": {"title": "LoRA Stacker"}
@@ -59,7 +69,7 @@
             "extension": "png",
             "steps": 25,
             "cfg": 7,
-            "modelname": "",
+            "modelname": "checkpoint.safetensors",
             "sampler_name": "euler_ancestral",
             "scheduler": "normal",
             "positive": ["combine_prompt_and_preamble", 0],
@@ -247,9 +257,9 @@
     },
     "llava_tagger": {
         "inputs": {
-            "model": "",
-            "mm_proj": "",
-            "prompt": "",
+            "model": "llama/llava-v1.5-7b-Q4_K",
+            "mm_proj": "llama/llava-v1.5-7b-mmproj-Q4_0",
+            "prompt": "Please describe this image in detail.",
             "max_tokens": 200,
             "temperature": 0.30,
             "image": ["image_loader", 0]
@@ -278,7 +288,7 @@
     "image_loader": {
         "inputs": {
             "image": "#DATA",
-            "image_data": "",
+            "image_data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
             "upload": "image"
         },
         "class_type": "LoadImage //Inspire",

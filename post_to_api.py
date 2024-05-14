@@ -140,7 +140,7 @@ if __name__ == '__main__':
 
     for k, v in configuration.items():
         if k in ['blank_loras', 'steps', 'latent_long_edge', 'latent_short_edge', 'latent_square_edge']: v = int(v)
-        if k in ['queue_poll_delay', 'cfg']: v = float(v)
+        if k in ['queue_poll_delay', 'cfg', 'fixed_lora_weight', 'fixed_lora_clip_weight', 'fixed_lora_model_weight']: v = float(v)
         if v in ['False', 'false']: v = False
         if v in ['True', 'true']: v = True
         configuration[k] = v
@@ -183,41 +183,9 @@ if __name__ == '__main__':
 
     with open(args.workflow, 'rt', encoding = 'utf-8') as fh:
         master_workflow_object = json.load(fh)
-    if '_comment' in master_workflow_object:
-        print('Workflow comment was:', master_workflow_object['_comment'])
-        del master_workflow_object['_comment']
-
-    # overrides
-    for k, v in configuration.items():
-        if not k.startswith('override-'):
-            continue
-        pieces = k.split('-')
-        # --override-ksampler-sampler_name euler
-        if len(pieces) == 3:
-            _, node, field = pieces
-            type_conversion = None
-        # --override-load_model-batch_size-int 3
-        if len(pieces) == 4:
-            _, node, field, type_conversion = pieces
-        match type_conversion:
-            case 'str':
-                v = str(v)
-            case 'int':
-                v = int(v)
-            case 'float':
-                v = float(v)
-            case 'wire':
-                inwards_node, output_number = v.split(':', 1)
-                v = [inwards_node.strip(), int(output_number)]
-            case None:
-                pass
-            case _:
-                raise TypeError(f'requested an override with {k}, but no casting case known for {type_conversion}')
-        if not node in master_workflow_object:
-            raise ValueError(f'requested an override of node {node} via {k}, but no such node in the workflow')
-        if not field in master_workflow_object[node]['inputs']:
-            raise ValueError(f'requested an override of input {field} on node {node} via {k}, but no such input exists on that node in the workflow')
-        master_workflow_object[node]['inputs'][field] = v
+    if 'comment' in master_workflow_object:
+        print('Workflow comment was:', master_workflow_object['comment']['inputs']['string'])
+        del master_workflow_object['comment']
 
     lora_choices = get_style_loras(
         configuration.get('lora_root'),
@@ -225,6 +193,17 @@ if __name__ == '__main__':
         configuration.get('blank_loras', 0)
     )
     print(f'LoRA discovery: {len(lora_choices)} LoRA detected (including \'blank\' LoRA options).')
+
+    if configuration.get('fixed_lora_name', None):
+        lora_name = fix_slashes(configuration.get('fixed_lora_name'))
+
+        single_weight = configuration.get('fixed_lora_weight', None)
+        clip_weight = configuration.get('fixed_lora_clip_weight', single_weight)
+        model_weight = configuration.get('fixed_lora_model_weight', single_weight)
+        
+        master_workflow_object['lora_stacker']['inputs']['lora_name_2'] = lora_name
+        master_workflow_object['lora_stacker']['inputs']['model_str_2'] = model_weight if model_weight else 1.0
+        master_workflow_object['lora_stacker']['inputs']['clip_str_2'] = clip_weight if clip_weight else 1.0
 
     if configuration.get('save_predetail', False):
         master_workflow_object['batch_images']['inputs'] = {
@@ -247,6 +226,8 @@ if __name__ == '__main__':
 
 
     master_workflow_object['preamble']['inputs']['string'] = configuration.get('preamble')
+    if configuration.get('add_tags', None):
+        master_workflow_object['preamble']['inputs']['string'] += f", {configuration.get('add_tags')}"
     master_workflow_object['negative_prompt']['inputs']['string'] = configuration.get('negative')
     master_workflow_object['wd14_tagger']['inputs']['exclude_tags'] = configuration.get('banned_tags')
 
@@ -313,10 +294,43 @@ if __name__ == '__main__':
             lora_name = random.choice(lora_choices)
             if lora_name:
                 wf['lora_stacker']['inputs']['lora_name_1'] = fix_slashes(lora_name)
-                wf['lora_stacker']['inputs']['model_str_1'] = 0.8
-                wf['lora_stacker']['inputs']['clip_str_1'] = 0.8
+                wf['lora_stacker']['inputs']['model_str_1'] = 0.7
+                wf['lora_stacker']['inputs']['clip_str_1'] = 0.7
             output_prefix = extract_prefix(image_path)
             wf['save_image']['inputs']['filename'] = f'{output_prefix}_%time_%basemodelname_%seed'
+
+            # overrides
+            for k, v in configuration.items():
+                if not k.startswith('override-'):
+                    continue
+                pieces = k.split('-')
+                # --override-ksampler-sampler_name euler
+                if len(pieces) == 3:
+                    _, node, field = pieces
+                    type_conversion = None
+                # --override-load_model-batch_size-int 3
+                if len(pieces) == 4:
+                    _, node, field, type_conversion = pieces
+                match type_conversion:
+                    case 'str':
+                        v = str(v)
+                    case 'int':
+                        v = int(v)
+                    case 'float':
+                        v = float(v)
+                    case 'wire':
+                        inwards_node, output_number = v.split(':', 1)
+                        v = [inwards_node.strip(), int(output_number)]
+                    case None:
+                        pass
+                    case _:
+                        raise TypeError(f'requested an override with {k}, but no casting case known for {type_conversion}')
+                if not node in master_workflow_object:
+                    raise ValueError(f'requested an override of node {node} via {k}, but no such node in the workflow')
+                if not field in master_workflow_object[node]['inputs']:
+                    raise ValueError(f'requested an override of input {field} on node {node} via {k}, but no such input exists on that node in the workflow')
+                wf[node]['inputs'][field] = v
+
             if args.dump:
                 dump_fn = f'{f_d}_{output_prefix}_workflow.json'.replace('/', '_').replace('\\', '_')
                 with open(dump_fn, 'w') as file:
@@ -324,5 +338,5 @@ if __name__ == '__main__':
             rs = submit_workflow(wf)
             print('.', end = '')
             sys.stdout.flush()
-            time.sleep(0.05)
+            time.sleep(configuration.get('queue_poll_delay', 0.25))
         print(f' - complete')

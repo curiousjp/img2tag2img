@@ -1,13 +1,21 @@
 {
+    "comment": {
+        "inputs": {
+            "string": "What you should provide to this workflow: load_model.ckpt_name; save_image.modelname; preamble.string, negative_prompt.string, full_path.string, wd14_tagger.exclude_tags, llava_tagger.model, llava_tagger.mm_proj, llava_tagger.prompt, seed.seed, image_loader.image_data"
+        },
+        "class_type": "String to Text",
+        "_meta": {"title": "Comment"}
+    },
     "load_model": {
         "inputs": {
             "ckpt_name": "sd15\\checkpoint.safetensors",
             "vae_name": "vae-ft-mse-840000-ema-pruned.ckpt",
             "clip_skip": -2,
             "lora_name": "None",
+            "lora_stack": ["lora_stacker", 0],
             "lora_model_strength": 1,
             "lora_clip_strength": 1,
-            "positive": ["log_prompt_to_console", 0],
+            "positive": ["combine_prompt_and_preamble", 0],
             "negative": ["negative_prompt", 0],
             "token_normalization": "none",
             "weight_interpretation": "comfy",
@@ -47,12 +55,16 @@
     },
     "lora_stacker": {
         "inputs": {
-            "input_mode": "simple",
-            "lora_count": 1,
+            "input_mode": "advanced",
+            "lora_count": 2,
             "lora_name_1": "None",
-            "lora_wt_1": 0.8,
-            "model_str_1": 1,
-            "clip_str_1": 1
+            "lora_wt_1": 0.7,
+            "model_str_1": 0.7,
+            "clip_str_1": 0.7,
+            "lora_name_2": "None",
+            "lora_wt_2": 0.7,
+            "model_str_2": 0.7,
+            "clip_str_2": 0.7
         },
         "class_type": "LoRA Stacker",
         "_meta": {"title": "LoRA Stacker"}
@@ -64,7 +76,7 @@
             "extension": "png",
             "steps": 25,
             "cfg": 7,
-            "modelname": "",
+            "modelname": "checkpoint.safetensors",
             "sampler_name": "euler_ancestral",
             "scheduler": "normal",
             "positive": ["combine_prompt_and_preamble", 0],
@@ -205,7 +217,7 @@
     "image_loader": {
         "inputs": {
             "image": "#DATA",
-            "image_data": "",
+            "image_data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
             "upload": "image"
         },
         "class_type": "LoadImage //Inspire",
@@ -233,9 +245,9 @@
     },
     "llava_tagger": {
         "inputs": {
-            "model": "",
-            "mm_proj": "",
-            "prompt": "",
+            "model": "llama/llava-v1.5-7b-Q4_K",
+            "mm_proj": "llama/llava-v1.5-7b-mmproj-Q4_0",
+            "prompt": "Please describe this image in detail.",
             "max_tokens": 200,
             "temperature": 0.30,
             "image": ["image_loader", 0]
