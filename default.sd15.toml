@@ -1,0 +1,42 @@
+[latent]
+landscape = [768, 576]
+portrait = [576, 768]
+square = [512, 512]
+
+[llava]
+disable = true
+
+[[lora]]
+name = 'None'
+
+[misc]
+save_predetail = false
+
+[model]
+checkpoint =  'sd15/swoonify_v20.safetensors'
+force_lora = [
+    {name = 'None'},
+]
+
+[overload]
+merge = {load_model = {inputs = {batch_size = 1}}}
+
+[paths]
+archive = '/home/curious/sdoutput/'
+output = ''
+
+[prompt]
+preamble = 'photorealistic, (hyperrealistic:1.2), beautiful, masterpiece, best quality, extremely detailed face, perfect lighting'
+negative = '(worst quality, low quality:1.4), (monochrome), zombie, watermark, username, patreon username, patreon logo, (extra fingers, deformed hands, polydactyl:1.5), text, panels'
+
+[server]
+address = '127.0.0.1'
+on_windows = true
+poll_delay = 0.25
+port = 8188
+
+[wd14]
+banned = [
+    'watermark',
+	'web_address',
+]

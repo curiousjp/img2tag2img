@@ -1,0 +1,126 @@
+# the poster will look at your input file and decide whether it is square,
+# portrait, or landscape, and pick one of the resolutions below for your
+# output file. values for these keys must be a two element list containing integers.
+
+[latent]
+landscape = [1216, 832]
+portrait = [832, 1216]
+square = [1024, 1024]
+
+# configuration for the llm component. the model and projector keys should be
+# written exactly as they would be in the widget. model, projector, and prompt
+# can either be strings, or lists of strings (one will be chosen at random for
+# each submission). disable should be true or false. if disable is true, the
+# node is removed from the workflow entirely, so you won't need the dependency
+# installed.
+
+[llava]
+disable = false
+model = 'llama/llava-v1.5-7b-Q4_K'
+projector = 'llama/llava-v1.5-7b-mmproj-Q4_0'
+prompt = 'Please describe this image in detail.'
+
+# lora blocks - you can have as many of these as you like, and one will be chosen
+# randomly and added to your workflow. if you want no lora, use name = 'None'. note
+# carefully that each block uses a section header of [[lora]], not [lora].
+#
+# if you would like an additional lora sometimes, you can use extra name = 'None'
+# loras to pad the list - three real lora and three 'None' lora means you'll have
+# a 50% chance of one being added to your prompt.
+#
+# within a lora block, the only real required field is name, a string. 
+# you can also specify:
+#	strength - a float, defaults to 1.0
+#	model_strength - a float, defaults to strength
+#	clip_strength - a float, defaults to strength
+#	trigger - a string, defaults to ''
+
+[[lora]]
+name = 'pony/style/Smooth Anime 2 Style SDXL_LoRA_Pony Diffusion V6 XL.safetensors'
+strength = 0.8
+[[lora]]
+name = 'pony/style/Concept Art Twilight Style SDXL_LoRA_Pony Diffusion V6 XL.safetensors'
+strength = 0.8
+[[lora]]
+name = 'pony/style/Rainbow Style SDXL_LoRA_Pony Diffusion V6 XL.safetensors'
+strength = 0.8
+trigger = 'colorful'
+[[lora]]
+name = 'None'
+
+# if you set save_predetail to true, both the original image direct from the ksampler
+# and the detailed version will be saved separately. this is likely to result in a 
+# combinatorial explosion if you chain multiple output folders together as both will 
+# spawn new workflows on the next cycle
+
+[misc]
+save_predetail = false
+
+# model settings. checkpoint can either be a string or a list of strings - if the latter
+# one will be chosen at random for each item. force_lora must be a list if defined, using
+# the same keys discussed in the lora block section. these lora / strengths / triggers
+# will be added to each generation, with no randomness - this is useful for lightning models
+# that need an accompanying lora.
+# cfg and steps are what you would think - cfg is a float, steps an integer.
+
+[model]
+checkpoint =  [
+    'sdxl/ponyFaetality_v10.safetensors',
+    'sdxl/ponyDiffusionV6XL_v6StartWithThisOne.safetensors', 
+]
+force_lora = [
+    {name = 'None'},
+]
+# cfg = 7.5
+# steps = 25
+
+# overload.replace allows you to entirely replace a key in the workflow dictionary. it
+# is difficult to use well. overload.merge instead merges its values with the workflow
+# dictionary and is better for setting a specific value in the workflow that has no 
+# predefined configuration key, such as batch_size
+
+[overload]
+merge = {load_model = {inputs = {batch_size = 1}}}
+#replace = {log_prompt_to_console = {inputs = {text= ["negative_prompt", 0], label= "Negative Prompt"}, class_type="Text to Console"}}
+
+# the paths explain where to find the files. archive is where to find the files from where
+# the script is running. output is where to find the files from where comfyui is running. 
+# sometimes these will be the same place - if both the script and comfyui are running on 
+# the same computer, in the same environment - so if output isn't included, it will use the
+# value of archive. if output is an empty string, it will just save to the comfyui output
+# folder, but you can use things like absolute paths or directory letters here too.
+#
+# in theory, these could be lists of strings instead of strings, but I'm not sure why you
+# would want to do this.
+
+[paths]
+archive = '/home/curious/sdoutput/'
+output = ''
+
+# the preamble is added to the start fo your automatically generated prompt, and the negative
+# should be fairly self explanatory. these are strings or lists of strings.
+[prompt]
+preamble = 'score_9, score_8_up, score_7_up, score_6_up, score_5_up, score_4_up, rating_safe'
+negative = 'head_out_of_frame, 3d'
+
+# if you'll be submitting to the server (i.e. running without --dump), these are the details for
+# contacting the server, including how long to pause between checks to see if the queue is empty
+# 
+# the on_windows setting is used to indicate if certain paths for Comfy, like paths to checkpoints
+# and to lora, should use forward slashes (/) or backslashes (\, usually escaped to \\). this lets 
+# you do your config in one style (I prefer forward slashes) and then patch it here if necessary.
+
+[server]
+address = '127.0.0.1'
+on_windows = true
+poll_delay = 0.25
+port = 8188
+
+# the banned field should be a list of strings - these tags will be removed from the list 
+# of things that the wd14 tagger detects in your image. 
+
+[wd14]
+banned = [
+    'watermark',
+	'web_address',
+]

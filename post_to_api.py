@@ -2,7 +2,6 @@ from urllib import request
 from PIL import Image
 import argparse
 import base64
-import configparser
 import datetime
 import io
 import json
@@ -12,8 +11,34 @@ import random
 import re
 import sys
 import time
+import tomlkit
 
-configuration = {}
+class ConfigManager:
+    def __init__(self, with_toml = 'default.toml'):
+        with open(with_toml) as fp:
+            self._state = tomlkit.load(fp)
+
+    # set_key('latent.landscape', [1216, 832])    
+    def set(self, key, value):
+        address = key.split('.')
+        current = self._state
+        for part in address[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        current[address[-1]] = value
+    
+    # get_key('wd14.banned', [])
+    def get(self, key, default = None, collapse = False):
+        address = key.split('.')
+        current = self._state
+        for part in address:
+            if part not in current:
+                return default
+            current = current[part]
+        if collapse and isinstance(current, list):
+            current = random.choice(current)
+        return current
 
 def image_to_data_url(image_path):
     mime_type, _ = mimetypes.guess_type(image_path)
@@ -33,8 +58,8 @@ def image_to_data_url(image_path):
     data_url = f'data:{mime_type};base64,{base64_string}'
     return data_url, img.size
 
-# when we go to name the new file, if it starts with four digits,
-# or an X followed by four digits, we will provide the same digits
+# when we go to name the new file, if it starts with digits and an 
+# underscore, (optional X prefix) we will provide the same digits
 # to use as a filename prefix. this lets us use diffusion.toolkit's
 # sort_by_name to group all the images with a common lineage together.
 #
@@ -55,29 +80,9 @@ def extract_prefix(file_path):
     extract_prefix.counter += 1
     return f"X{extract_prefix.counter:04}"
 
-def get_style_loras(base_lora_path, subfolder = None, pad_list = 1):
-    lora_banlist = [
-        'Photo Style LoRA XL.safetensors',
-        'hyperrealism_CivitAI.safetensors',
-        'RetouchXL_PonyV6_v2.safetensors'
-    ]
-    candidates = []
-    if subfolder:
-        folder_path = os.path.join(base_lora_path, subfolder)
-    else:
-        folder_path = base_lora_path
-
-    for root, _, files in os.walk(folder_path):
-        for file in files:
-            if file.endswith('.safetensors') and file not in lora_banlist:
-                candidates.append(os.path.relpath(os.path.join(root, file), base_lora_path).replace('\\', '/'))
-    if pad_list > 0:
-        candidates += ([None] * pad_list)
-    return candidates
-
 def get_queue_length():
-    address = configuration.get('comfy_address', '127.0.0.1')
-    port = configuration.get('comfy_port', '8188')
+    address = configuration.get('server.address', '127.0.0.1')
+    port = configuration.get('server.port', 8188)
     req = request.Request(f'http://{address}:{port}/queue')
     res = request.urlopen(req)
     result = json.load(res)
@@ -85,8 +90,8 @@ def get_queue_length():
     return total_jobs
 
 def submit_workflow(wf):
-    address = configuration.get('comfy_address', '127.0.0.1')
-    port = configuration.get('comfy_port', '8188')
+    address = configuration.get('server.address', '127.0.0.1')
+    port = configuration.get('server.port', 8188)
     wrapped_workflow = {'prompt': wf}
     wfj = json.dumps(wrapped_workflow).encode('utf-8')
     req = request.Request(f'http://{address}:{port}/prompt', data=wfj)
@@ -99,87 +104,167 @@ def is_valid_file(p, a):
     else:
         return a
 
+def template_workflow(workflow_template, config, image_path, destination, prefix):
+    wf = dict(workflow_template)
+
+    if config.get('server.on_windows', False): fix_slashes = lambda x: x.replace('/', '\\')
+    else: fix_slashes = lambda x: x
+
+    # seed
+    wf['seed']['inputs']['seed'] = random.randint(0, 1125899906842623)
+
+    # output path
+    archive_root = config.get('paths.archive', '', True)
+    output_root = config.get('paths.output', archive_root, True)
+    wf['full_path']['inputs']['string'] = fix_slashes(os.path.join(output_root, destination))
+    wf['save_image']['inputs']['filename'] = f'{prefix}_%time_%basemodelname_%seed'
+
+    # do we save both images or only the detailed one?
+    if config.get('misc.save_predetail', False, True):
+        wf['batch_images']['inputs'] = {
+            "images_a": ["ksampler", 3],
+            "images_b": ["face_detailer", 0 ]
+        }
+    else:
+        wf['batch_images']['inputs'] = {
+            "images_a": ["face_detailer", 0 ]
+        }
+
+    # is llava tagging on or off?
+    if config.get('llava.disable', False):
+        if 'llava_tagger' in wf:
+            del wf['llava_tagger']
+            wf['combine_prompt_and_preamble']['inputs']['text_c'] = ""
+    else:
+        wf['llava_tagger']['inputs']['prompt'] = config.get('llava.prompt', 'Please describe this image in detail.', True)
+        wf['llava_tagger']['inputs']['model'] = fix_slashes(config.get('llava.model', 'llama/llava-v1.5-7b-Q4_K', True))
+        wf['llava_tagger']['inputs']['mm_proj'] = fix_slashes(config.get('llava.projector', 'llama/llava-v1.5-7b-mmproj-Q4_0', True))
+
+    # prompt
+    wf['preamble']['inputs']['string'] = config.get('prompt.preamble', '', True)
+    wf['negative_prompt']['inputs']['string'] = config.get('prompt.negative', '', True)
+
+    # wd14 tagger
+    banned_tags = ', '.join(config.get('wd14.banned', [], False))
+    wf['wd14_tagger']['inputs']['exclude_tags'] = banned_tags
+
+    # model, 
+    checkpoint = fix_slashes(config.get('model.checkpoint', 'ponyFaetality_v10.safetensors', True))
+    if 'base_ckpt_name' in wf['load_model']['inputs']: wf['load_model']['inputs']['base_ckpt_name'] = checkpoint
+    if 'ckpt_name' in wf['load_model']['inputs']: wf['load_model']['inputs']['ckpt_name'] = checkpoint
+    
+    # cfg and steps
+    cfg = config.get('model.cfg', None)
+    if cfg: wf['ksampler']['inputs']['cfg'] = cfg
+    steps = config.get('model.steps', None)
+    if steps: wf['ksampler']['inputs']['steps'] = steps
+
+    # pack image
+    data_url, img_size = image_to_data_url(image_path)
+    wf['image_loader']['inputs']['image_data'] = data_url
+
+    # latent size
+    img_width, img_height = img_size
+    if img_width == img_height:
+        lw, lh = config.get('latent.square', [1024, 1024], False)
+    elif img_width > img_height:
+        lw, lh = config.get('latent.landscape', [1216, 832], False)
+    else:
+        lw, lh = config.get('latent.portrait', [832, 1216], False)
+    wf['load_model']['inputs']['empty_latent_width'] = lw
+    wf['load_model']['inputs']['empty_latent_height'] = lh
+
+    def processLoraRecord(lr):
+        name = lr.get('name', 'None')
+        if name == 'None':
+            return ('None', 0, 0, '')
+        global_strength = lr.get('strength', 1.0)
+        model_strength = lr.get('model_strength', global_strength)
+        clip_strength = lr.get('clip_strength', global_strength)
+        trigger = lr.get('trigger', '')
+        return (name, model_strength, clip_strength, trigger)
+
+    lora_choices = config.get('lora', [{'name': 'None'}], False)
+    ln, lm, lc, lt = processLoraRecord(random.choice(lora_choices))
+    wf['lora_stacker']['inputs']['lora_name_1'] = fix_slashes(ln)
+    wf['lora_stacker']['inputs']['model_str_1'] = lm
+    wf['lora_stacker']['inputs']['clip_str_1'] = lc
+    if lt: wf['preamble']['inputs']['string'] += f', {lt}'
+
+    lindex = 2
+    forced_loras = config.get('model.force_lora', [], False)
+    for forced_lora in forced_loras:
+        ln, lm, lc, lt = processLoraRecord(forced_lora)
+        wf['lora_stacker']['inputs'][f'lora_name_{lindex}'] = fix_slashes(ln)
+        wf['lora_stacker']['inputs'][f'model_str_{lindex}'] = lm
+        wf['lora_stacker']['inputs'][f'clip_str_{lindex}'] = lc
+        if lt: wf['preamble']['inputs']['string'] += f', {lt}'
+        wf['lora_stacker']['inputs']['lora_count'] = lindex
+        lindex += 1
+
+    overload_replace = config.get('overload.replace', None, True)
+    if overload_replace:
+        wf.update(overload_replace)
+    
+    def deepMerge(dst, src):
+        for k in src:
+            if k in dst:
+                if isinstance(dst[k], dict) and isinstance(src[k], dict):
+                    deepMerge(dst[k], src[k])
+                else:
+                    dst[k] = src[k]
+            else:
+                dst[k] = src[k]
+        return dst
+    
+    overload_merge = config.get('overload.merge', None, True)
+    if overload_merge:
+        deepMerge(wf, overload_merge)
+    
+    # finally, patch the save node, accounting for any changes made by the overloads
+    wf['save_image']['inputs']['steps'] = wf['ksampler']['inputs']['steps']
+    wf['save_image']['inputs']['cfg'] = wf['ksampler']['inputs']['cfg']
+    wf['save_image']['inputs']['modelname'] = wf['ksampler']['inputs']['cfg']
+    if 'base_ckpt_name' in wf['load_model']['inputs']: wf['save_image']['inputs']['modelname'] = wf['load_model']['inputs']['base_ckpt_name']
+    if 'ckpt_name' in wf['load_model']['inputs']: wf['save_image']['inputs']['modelname'] = wf['load_model']['inputs']['ckpt_name']
+    wf['save_image']['inputs']['sampler_name'] = wf['ksampler']['inputs']['sampler_name']
+    wf['save_image']['inputs']['scheduler'] = wf['ksampler']['inputs']['scheduler']
+
+    return wf
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('workflow', type=lambda x: is_valid_file(parser, x))
     parser.add_argument('folder_f', type=str)
     parser.add_argument('folder_t', nargs="+", type=str)
-    parser.add_argument('--config_file', type=lambda x: is_valid_file(parser, x), default='default.ini')
+    parser.add_argument('--config_file', type=lambda x: is_valid_file(parser, x), default='default.toml')
     parser.add_argument('--dump', action='store_true')
-    args, unknown_arguments = parser.parse_known_args()
+    args = parser.parse_args()
 
-    if args.config_file:
-        config_object = configparser.ConfigParser()
-        config_object.read(args.config_file)
-        for section in config_object.sections():
-            for k, v in config_object.items(section):
-                configuration[k] = v
+    configuration = ConfigManager(args.config_file)
 
-    # had originally used an iterable here, but there's no
-    # really good way to peek these in a for/in loop
-    index = 0
-    while index < len(unknown_arguments):
-        unknown_arg = unknown_arguments[index]
-        if index < len(unknown_arguments) - 1:
-            next_unknown_arg = unknown_arguments[index + 1]
-        else:
-            next_unknown_arg = None
-        if unknown_arg.startswith('--'):
-            key = unknown_arg[2:]
-            if '=' in key:
-                key, value = key.split('=', 1)
-            elif next_unknown_arg == None or next_unknown_arg.startswith('--'):
-                value = True
-            else:
-                value = next_unknown_arg
-                # jump over the next argument
-                index += 1
-            configuration[key] = value
-        index += 1
-
-    for k, v in configuration.items():
-        if k in ['blank_loras', 'steps', 'latent_long_edge', 'latent_short_edge', 'latent_square_edge']: v = int(v)
-        if k in ['queue_poll_delay', 'cfg', 'fixed_lora_weight', 'fixed_lora_clip_weight', 'fixed_lora_model_weight']: v = float(v)
-        if v in ['False', 'false']: v = False
-        if v in ['True', 'true']: v = True
-        configuration[k] = v
+    # we originally had a fairly rich system for command line overrides here, but it seemed like
+    # more trouble than it was worth. during the switch to toml, it was decided to get rid of it
+    #
+    # if you need oneshot changes, it probably is genuinely easier to copy your existing config,
+    # add an [override] section as described in the README and use that
 
     necessaries = [
-        'archive_path',
-        'banned_tags',
-        'checkpoint',
-        'latent_long_edge',
-        'latent_short_edge',
-        'latent_square_edge',
-        'llava_model',
-        'llava_projector',
-        'llava_prompt',
-        'lora_root',
-        'negative',
-        'preamble'
+        'paths.archive',
+        'model.checkpoint',
     ]
 
-    if configuration.get('disable_llm', False):
-        necessaries.remove('llava_model')
-        necessaries.remove('llava_projector')
-        necessaries.remove('llava_prompt')
-
     for necessary_key in necessaries:
-        if necessary_key not in configuration:
-            print(f'Necessary configuration key \'{necessary_key}\' must be provided in either {args.config_file} or on the command line. Exiting.')
+        available = configuration.get(necessary_key, None, True)
+        if not available:
+            print(f'Necessary configuration key \'{necessary_key}\' must be provided in {args.config_file}. Exiting.')
             sys.exit(1)
 
-    print('Current configuration:', configuration)
-
-    if configuration.get('comfy_on_windows', False):
-        fix_slashes = lambda x: x.replace('/', '\\')
-    else:
-        fix_slashes = lambda x: x
-
-    # create our pairs of folders
-    folder_list = [args.folder_f] + args.folder_t
-    pairings = zip(folder_list[:-1], folder_list[1:])
+    # NAUGHTY, should define a getter for this
+    print('Current configuration:', configuration._state)
+    if args.dump:
+        print('Processed workflows will be saved to disk, but not submitted.')
 
     with open(args.workflow, 'rt', encoding = 'utf-8') as fh:
         master_workflow_object = json.load(fh)
@@ -187,156 +272,46 @@ if __name__ == '__main__':
         print('Workflow comment was:', master_workflow_object['comment']['inputs']['string'])
         del master_workflow_object['comment']
 
-    lora_choices = get_style_loras(
-        configuration.get('lora_root'),
-        configuration.get('lora_prefix'),
-        configuration.get('blank_loras', 0)
-    )
-    print(f'LoRA discovery: {len(lora_choices)} LoRA detected (including \'blank\' LoRA options).')
+    # create our pairs of folders
+    folder_list = [args.folder_f] + args.folder_t
+    pairings = zip(folder_list[:-1], folder_list[1:])
 
-    if configuration.get('fixed_lora_name', None):
-        lora_name = fix_slashes(configuration.get('fixed_lora_name'))
-
-        single_weight = configuration.get('fixed_lora_weight', None)
-        clip_weight = configuration.get('fixed_lora_clip_weight', single_weight)
-        model_weight = configuration.get('fixed_lora_model_weight', single_weight)
-        
-        master_workflow_object['lora_stacker']['inputs']['lora_name_2'] = lora_name
-        master_workflow_object['lora_stacker']['inputs']['model_str_2'] = model_weight if model_weight else 1.0
-        master_workflow_object['lora_stacker']['inputs']['clip_str_2'] = clip_weight if clip_weight else 1.0
-
-    if configuration.get('save_predetail', False):
-        master_workflow_object['batch_images']['inputs'] = {
-            "images_a": ["ksampler", 3],
-            "images_b": ["face_detailer", 0 ]
-        }
-    else:
-        master_workflow_object['batch_images']['inputs'] = {
-            "images_a": ["face_detailer", 0 ]
-        }
-
-    if configuration.get('disable_llm', False):
-        if 'llava_tagger' in master_workflow_object:
-            del master_workflow_object['llava_tagger']
-            master_workflow_object['combine_prompt_and_preamble']['inputs']['text_c'] = ""
-    else:
-        master_workflow_object['llava_tagger']['inputs']['prompt'] = configuration.get('llava_prompt')
-        master_workflow_object['llava_tagger']['inputs']['model'] = fix_slashes(configuration.get('llava_model'))
-        master_workflow_object['llava_tagger']['inputs']['mm_proj'] = fix_slashes(configuration.get('llava_projector'))
-
-
-    master_workflow_object['preamble']['inputs']['string'] = configuration.get('preamble')
-    if configuration.get('add_tags', None):
-        master_workflow_object['preamble']['inputs']['string'] += f", {configuration.get('add_tags')}"
-    master_workflow_object['negative_prompt']['inputs']['string'] = configuration.get('negative')
-    master_workflow_object['wd14_tagger']['inputs']['exclude_tags'] = configuration.get('banned_tags')
-
-    if 'cfg' in configuration:
-        master_workflow_object['ksampler']['inputs']['cfg'] = configuration.get('cfg')
-    if 'steps' in configuration:
-        master_workflow_object['ksampler']['inputs']['steps'] = configuration.get('steps')
-
-    checkpoint = fix_slashes(configuration.get('checkpoint'))
-    if 'base_ckpt_name' in master_workflow_object['load_model']['inputs']:
-        master_workflow_object['load_model']['inputs']['base_ckpt_name'] = checkpoint
-    if 'ckpt_name' in master_workflow_object['load_model']['inputs']:
-        master_workflow_object['load_model']['inputs']['ckpt_name'] = checkpoint
-    master_workflow_object['save_image']['modelname'] = checkpoint
-
-    for pair in pairings:
+    for pair_index, pair in enumerate(pairings):
         f_s, f_d = pair
-        per_directory_wf = dict(master_workflow_object)
-
-        if 'output_path' in configuration:
-            output_path = fix_slashes(os.path.join(configuration.get('output_path'), f_d))
-        else:
-            output_path = fix_slashes(os.path.join(configuration.get('archive_path'), f_d))
-        per_directory_wf['full_path']['inputs']['string'] = output_path
 
         print(f'** standing by to run workflow from {f_s} to {f_d}')
         while(get_queue_length() > 0):
-            time.sleep(configuration.get('queue_poll_delay', 0.25))
+            time.sleep(configuration.get('server.poll_delay', 0.25, True))
         print(f'   queue has emptied, time is {datetime.datetime.now()}')
 
-        file_folder = os.path.join(configuration.get('archive_path'), f_s)
-        print(f'   enumerating images in {file_folder}')
+        input_folder = os.path.join(configuration.get('paths.archive', '', True), f_s)
+        print(f'   enumerating images in {input_folder}')
         input_images = []
-        for root, _, files in os.walk(file_folder):
+        for root, _, files in os.walk(input_folder):
             for file in files:
                 if file.endswith('.png') or file.endswith('.jpg'):
                     input_images.append(os.path.join(root, file))
-
         print(f'   found {len(input_images)} files')
         print('   ', end = '')
         sys.stdout.flush()
 
-        for image_path in input_images:
-            wf = dict(per_directory_wf)
-            wf['seed']['inputs']['seed'] = random.randint(0, 1125899906842623)
-            data_url, img_size = image_to_data_url(image_path)
-            wf['image_loader']['inputs']['image_data'] = data_url
-
-            img_width, img_height = img_size
-            if img_width == img_height:
-                latent_width = configuration.get('latent_square_edge')
-                latent_height = latent_width
-            elif img_width > img_height:
-                latent_width = configuration.get('latent_long_edge')
-                latent_height = configuration.get('latent_short_edge')
-            else:
-                latent_width = configuration.get('latent_short_edge')
-                latent_height = configuration.get('latent_long_edge')
-            wf['load_model']['inputs']['empty_latent_width'] = latent_width
-            wf['load_model']['inputs']['empty_latent_height'] = latent_height
-
-            if not lora_choices:
-                lora_choices = [None]
-            lora_name = random.choice(lora_choices)
-            if lora_name:
-                wf['lora_stacker']['inputs']['lora_name_1'] = fix_slashes(lora_name)
-                wf['lora_stacker']['inputs']['model_str_1'] = 0.7
-                wf['lora_stacker']['inputs']['clip_str_1'] = 0.7
+        for image_index, image_path in enumerate(input_images):
             output_prefix = extract_prefix(image_path)
-            wf['save_image']['inputs']['filename'] = f'{output_prefix}_%time_%basemodelname_%seed'
-
-            # overrides
-            for k, v in configuration.items():
-                if not k.startswith('override-'):
-                    continue
-                pieces = k.split('-')
-                # --override-ksampler-sampler_name euler
-                if len(pieces) == 3:
-                    _, node, field = pieces
-                    type_conversion = None
-                # --override-load_model-batch_size-int 3
-                if len(pieces) == 4:
-                    _, node, field, type_conversion = pieces
-                match type_conversion:
-                    case 'str':
-                        v = str(v)
-                    case 'int':
-                        v = int(v)
-                    case 'float':
-                        v = float(v)
-                    case 'wire':
-                        inwards_node, output_number = v.split(':', 1)
-                        v = [inwards_node.strip(), int(output_number)]
-                    case None:
-                        pass
-                    case _:
-                        raise TypeError(f'requested an override with {k}, but no casting case known for {type_conversion}')
-                if not node in master_workflow_object:
-                    raise ValueError(f'requested an override of node {node} via {k}, but no such node in the workflow')
-                if not field in master_workflow_object[node]['inputs']:
-                    raise ValueError(f'requested an override of input {field} on node {node} via {k}, but no such input exists on that node in the workflow')
-                wf[node]['inputs'][field] = v
-
+            templated_workflow = template_workflow(
+                master_workflow_object,
+                configuration,
+                image_path,
+                f_d,
+                output_prefix
+            )
             if args.dump:
-                dump_fn = f'{f_d}_{output_prefix}_workflow.json'.replace('/', '_').replace('\\', '_')
+                dump_fn = re.sub(r'[\\/*?:"<>|]', '_', f'{f_d}_{output_prefix}_workflow.json')
                 with open(dump_fn, 'w') as file:
-                    json.dump(wf, file, indent = 4)
-            rs = submit_workflow(wf)
+                    json.dump(templated_workflow, file, indent = 4)
+            else:
+                rs = submit_workflow(templated_workflow)
             print('.', end = '')
             sys.stdout.flush()
-            time.sleep(configuration.get('queue_poll_delay', 0.25))
+            time.sleep(configuration.get('server.poll_delay', 0.25, True))
+        
         print(f' - complete')

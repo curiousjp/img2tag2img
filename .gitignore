@@ -1,5 +1,7 @@
 # local testing
 *.test.ini
+*.test.toml
+*_workflow.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
