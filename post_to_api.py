@@ -2,6 +2,7 @@ from urllib import request
 from PIL import Image
 import argparse
 import base64
+import copy
 import datetime
 import io
 import json
@@ -10,6 +11,7 @@ import os
 import random
 import re
 import sys
+import tempfile
 import time
 import tomlkit
 
@@ -103,9 +105,17 @@ def is_valid_file(p, a):
         p.error(f'file {a} does not exist!')
     else:
         return a
+    
+def action_workflow(wf, f_d, output_prefix, dump = False):
+    if dump:
+        dump_fn = re.sub(r'[\\/*?:"<>|]', '_', f'{f_d}_{output_prefix}_workflow_')
+        with tempfile.NamedTemporaryFile(dir = '.', prefix = dump_fn, suffix = '.json', delete = False, mode = 'w') as file:
+            json.dump(wf, file, indent = 4)
+    else:
+        rs = submit_workflow(wf)
 
 def template_workflow(workflow_template, config, image_path, destination, prefix):
-    wf = dict(workflow_template)
+    wf = copy.deepcopy(workflow_template)
 
     if config.get('server.on_windows', False): fix_slashes = lambda x: x.replace('/', '\\')
     else: fix_slashes = lambda x: x
@@ -177,30 +187,42 @@ def template_workflow(workflow_template, config, image_path, destination, prefix
     def processLoraRecord(lr):
         name = lr.get('name', 'None')
         if name == 'None':
-            return ('None', 0, 0, '')
+            return ('None', 0, 0, '', '')
         global_strength = lr.get('strength', 1.0)
         model_strength = lr.get('model_strength', global_strength)
         clip_strength = lr.get('clip_strength', global_strength)
         trigger = lr.get('trigger', '')
-        return (name, model_strength, clip_strength, trigger)
+        neg_trigger = lr.get('neg_trigger', '')
+        return (name, model_strength, clip_strength, trigger, neg_trigger)
+
+    lora_used = []
 
     lora_choices = config.get('lora', [{'name': 'None'}], False)
-    ln, lm, lc, lt = processLoraRecord(random.choice(lora_choices))
+    ln, lm, lc, lt, ltn = processLoraRecord(random.choice(lora_choices))
     wf['lora_stacker']['inputs']['lora_name_1'] = fix_slashes(ln)
+    if ln != 'None':
+        lora_used.append(ln)
     wf['lora_stacker']['inputs']['model_str_1'] = lm
     wf['lora_stacker']['inputs']['clip_str_1'] = lc
     if lt: wf['preamble']['inputs']['string'] += f', {lt}'
-
+    if ltn: wf['negative_prompt']['inputs']['string'] += f', {ltn}'
+    
     lindex = 2
     forced_loras = config.get('model.force_lora', [], False)
     for forced_lora in forced_loras:
-        ln, lm, lc, lt = processLoraRecord(forced_lora)
+        ln, lm, lc, lt, ltn = processLoraRecord(forced_lora)
         wf['lora_stacker']['inputs'][f'lora_name_{lindex}'] = fix_slashes(ln)
+        if ln != 'None':
+            lora_used.append(ln)
         wf['lora_stacker']['inputs'][f'model_str_{lindex}'] = lm
         wf['lora_stacker']['inputs'][f'clip_str_{lindex}'] = lc
         if lt: wf['preamble']['inputs']['string'] += f', {lt}'
+        if ltn: wf['negative_prompt']['inputs']['string'] += f', {ltn}'
         wf['lora_stacker']['inputs']['lora_count'] = lindex
         lindex += 1
+
+    lora_used.sort()    
+    lora_sort_key = "!".join(lora_used)
 
     overload_replace = config.get('overload.replace', None, True)
     if overload_replace:
@@ -230,7 +252,11 @@ def template_workflow(workflow_template, config, image_path, destination, prefix
     wf['save_image']['inputs']['sampler_name'] = wf['ksampler']['inputs']['sampler_name']
     wf['save_image']['inputs']['scheduler'] = wf['ksampler']['inputs']['scheduler']
 
-    return wf
+    # last tidy
+    if wf['preamble']['inputs']['string'].startswith(', '): wf['preamble']['inputs']['string'] = wf['preamble']['inputs']['string'][2:]
+    if wf['negative_prompt']['inputs']['string'].startswith(', '): wf['negative_prompt']['inputs']['string'] = wf['negative_prompt']['inputs']['string'][2:]
+
+    return (checkpoint, lora_sort_key, wf)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -240,6 +266,7 @@ if __name__ == '__main__':
     parser.add_argument('folder_t', nargs="+", type=str)
     parser.add_argument('--config_file', type=lambda x: is_valid_file(parser, x), default='default.toml')
     parser.add_argument('--dump', action='store_true')
+    parser.add_argument('--sort', action='store_true')
     args = parser.parse_args()
 
     configuration = ConfigManager(args.config_file)
@@ -276,9 +303,9 @@ if __name__ == '__main__':
     folder_list = [args.folder_f] + args.folder_t
     pairings = zip(folder_list[:-1], folder_list[1:])
 
+    stored_workflows = []
     for pair_index, pair in enumerate(pairings):
         f_s, f_d = pair
-
         print(f'** standing by to run workflow from {f_s} to {f_d}')
         while(get_queue_length() > 0):
             time.sleep(configuration.get('server.poll_delay', 0.25, True))
@@ -297,21 +324,31 @@ if __name__ == '__main__':
 
         for image_index, image_path in enumerate(input_images):
             output_prefix = extract_prefix(image_path)
-            templated_workflow = template_workflow(
+            csort, lsort, templated_workflow = template_workflow(
                 master_workflow_object,
                 configuration,
                 image_path,
                 f_d,
                 output_prefix
             )
-            if args.dump:
-                dump_fn = re.sub(r'[\\/*?:"<>|]', '_', f'{f_d}_{output_prefix}_workflow.json')
-                with open(dump_fn, 'w') as file:
-                    json.dump(templated_workflow, file, indent = 4)
+            if args.sort:
+                stored_workflows.append(((csort, lsort), templated_workflow, f_d, output_prefix, args.dump))
             else:
-                rs = submit_workflow(templated_workflow)
+                action_workflow(templated_workflow, f_d, output_prefix, args.dump)
             print('.', end = '')
             sys.stdout.flush()
-            time.sleep(configuration.get('server.poll_delay', 0.25, True))
-        
+            if not args.dump:
+                time.sleep(configuration.get('server.poll_delay', 0.25, True))
+
         print(f' - complete')
+        if args.sort:
+            print('  now sorting workflows to minimise model loads')
+            stored_workflows.sort(key = lambda x: x[0])
+            if args.dump:
+                print('  dumping workflows')
+            else:
+                print('  submitting workflows')
+            for _, wf, f_d, op, d in stored_workflows:
+                action_workflow(wf, f_d, op, d)
+                if not args.dump:
+                    time.sleep(configuration.get('server.poll_delay', 0.25, True))

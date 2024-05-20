@@ -34,6 +34,7 @@ prompt = 'Please describe this image in detail.'
 #	model_strength - a float, defaults to strength
 #	clip_strength - a float, defaults to strength
 #	trigger - a string, defaults to ''
+#	neg_trigger - a string, defaults to '' (added to negative prompt)
 
 [[lora]]
 name = 'pony/style/Smooth Anime 2 Style SDXL_LoRA_Pony Diffusion V6 XL.safetensors'
