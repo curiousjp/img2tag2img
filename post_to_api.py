@@ -303,9 +303,9 @@ if __name__ == '__main__':
     folder_list = [args.folder_f] + args.folder_t
     pairings = zip(folder_list[:-1], folder_list[1:])
 
-    stored_workflows = []
     for pair_index, pair in enumerate(pairings):
         f_s, f_d = pair
+        stored_workflows = []
         print(f'** standing by to run workflow from {f_s} to {f_d}')
         while(get_queue_length() > 0):
             time.sleep(configuration.get('server.poll_delay', 0.25, True))
@@ -342,12 +342,12 @@ if __name__ == '__main__':
 
         print(f' - complete')
         if args.sort:
-            print('  now sorting workflows to minimise model loads')
+            print('   now sorting workflows to minimise model loads')
             stored_workflows.sort(key = lambda x: x[0])
             if args.dump:
-                print('  dumping workflows')
+                print('   dumping workflows')
             else:
-                print('  submitting workflows')
+                print('   submitting workflows')
             for _, wf, f_d, op, d in stored_workflows:
                 action_workflow(wf, f_d, op, d)
                 if not args.dump:
