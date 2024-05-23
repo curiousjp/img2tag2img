@@ -42,6 +42,30 @@ class ConfigManager:
             current = random.choice(current)
         return current
 
+def bulk_load_from_file(json_path):
+    # to rehydrate a json file grabbed with e.g. curl -o q.json http://localhost:8188/queue
+    #
+    # you can then gun the queue with:
+    #  curl --location --globoff 'http://localhost:8188/queue' --data '{"clear": true}'
+
+    print(f'** standing by to rehydrate workflows from {json_path}')
+    with open(json_path) as fp:
+        json_obj = json.load(fp)
+    jobs = json_obj['queue_running'] + json_obj['queue_pending']
+    while(get_queue_length() > 0):
+        time.sleep(configuration.get('server.poll_delay', 0.25, True))
+    print(f'   queue has emptied, time is {datetime.datetime.now()}')
+    print(f'   found {len(jobs)} jobs')
+    print('   ', end = '')
+    sys.stdout.flush()
+    for job in jobs:
+        job_json = job[2]
+        submit_workflow(job_json)
+        time.sleep(configuration.get('server.poll_delay', 0.25, True))
+        print('.', end = '')
+        sys.stdout.flush()
+    print(' - complete')
+
 def image_to_data_url(image_path):
     mime_type, _ = mimetypes.guess_type(image_path)
     if mime_type is None or not mime_type.startswith('image'):
