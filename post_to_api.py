@@ -182,8 +182,28 @@ def template_workflow(workflow_template, config, image_path, destination, prefix
     banned_tags = ', '.join(config.get('wd14.banned', [], False))
     wf['wd14_tagger']['inputs']['exclude_tags'] = banned_tags
 
+
+    lora_choices = []
+
     # model, 
-    checkpoint = fix_slashes(config.get('model.checkpoint', 'ponyFaetality_v10.safetensors', True))
+    checkpoint = config.get('model.checkpoint', 'ponyFaetality_v10.safetensors', True)
+    
+    # the model.checkpoint records can themselves be a list, to allow tying 
+    # specific lora to specific models as a kind of "virtual model":
+    # [
+    #    checkpoint_name,
+    #    lora_name, model_strength, clip_strength, trigger, negative_trigger,
+    #    lora_name, model_strength, clip_strength, trigger, negative_trigger,
+    #    ...
+    # ]
+    #
+    # etc. If the first lora_name is None, it will be overwritten with a random choice if one is available
+
+    if isinstance(checkpoint, list):
+        checkpoint, lora_choices = checkpoint[0], [(checkpoint[i+0], checkpoint[i+1], checkpoint[i+2], checkpoint[i+3], checkpoint[i+4]) for i in range(1, len(checkpoint), 5)]
+
+    checkpoint = fix_slashes(checkpoint)
+
     if 'base_ckpt_name' in wf['load_model']['inputs']: wf['load_model']['inputs']['base_ckpt_name'] = checkpoint
     if 'ckpt_name' in wf['load_model']['inputs']: wf['load_model']['inputs']['ckpt_name'] = checkpoint
     
@@ -219,34 +239,27 @@ def template_workflow(workflow_template, config, image_path, destination, prefix
         neg_trigger = lr.get('neg_trigger', '')
         return (name, model_strength, clip_strength, trigger, neg_trigger)
 
-    lora_used = []
-
-    lora_choices = config.get('lora', [{'name': 'None'}], False)
-    ln, lm, lc, lt, ltn = processLoraRecord(random.choice(lora_choices))
-    wf['lora_stacker']['inputs']['lora_name_1'] = fix_slashes(ln)
-    if ln != 'None':
-        lora_used.append(ln)
-    wf['lora_stacker']['inputs']['model_str_1'] = lm
-    wf['lora_stacker']['inputs']['clip_str_1'] = lc
-    if lt: wf['preamble']['inputs']['string'] += f', {lt}'
-    if ltn: wf['negative_prompt']['inputs']['string'] += f', {ltn}'
+    if not lora_choices or not lora_choices[0][0]:
+        if not lora_choices:
+            lora_choices.append(None);
+        available_lora = config.get('lora', [{'name': 'None'}], False)
+        ln, lm, lc, lt, ltn = processLoraRecord(random.choice(available_lora))
+        lora_choices[0] = (ln, lm, lc, lt, ltn)
     
-    lindex = 2
     forced_loras = config.get('model.force_lora', [], False)
     for forced_lora in forced_loras:
         ln, lm, lc, lt, ltn = processLoraRecord(forced_lora)
-        wf['lora_stacker']['inputs'][f'lora_name_{lindex}'] = fix_slashes(ln)
-        if ln != 'None':
-            lora_used.append(ln)
-        wf['lora_stacker']['inputs'][f'model_str_{lindex}'] = lm
-        wf['lora_stacker']['inputs'][f'clip_str_{lindex}'] = lc
+        lora_choices.append((ln, lm, lc, lt, ltn))
+
+    for i in range(1, len(lora_choices) + 1):
+        ln, lm, lc, lt, ltn = lora_choices[i - 1]
+        wf['lora_stacker']['inputs'][f'lora_name_{i}'] = fix_slashes(ln)
+        wf['lora_stacker']['inputs'][f'model_str_{i}'] = lm
+        wf['lora_stacker']['inputs'][f'clip_str_{i}'] = lc
         if lt: wf['preamble']['inputs']['string'] += f', {lt}'
         if ltn: wf['negative_prompt']['inputs']['string'] += f', {ltn}'
-        wf['lora_stacker']['inputs']['lora_count'] = lindex
-        lindex += 1
 
-    lora_used.sort()    
-    lora_sort_key = "!".join(lora_used)
+    lora_sort_key = "!".join(sorted([x[0] for x in lora_choices]))
 
     overload_replace = config.get('overload.replace', None, True)
     if overload_replace:
@@ -287,7 +300,7 @@ if __name__ == '__main__':
 
     parser.add_argument('workflow', type=lambda x: is_valid_file(parser, x))
     parser.add_argument('folder_f', type=str)
-    parser.add_argument('folder_t', nargs="+", type=str)
+    parser.add_argument('folder_t', nargs='+', type=str)
     parser.add_argument('--config_file', type=lambda x: is_valid_file(parser, x), default='default.toml')
     parser.add_argument('--dump', action='store_true')
     parser.add_argument('--sort', action='store_true')
